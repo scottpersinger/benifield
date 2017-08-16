@@ -1,0 +1,20 @@
+{
+  "name": "benifield",
+  "version": "1.0.0",
+  "description": "Connects Slack to Salesforce ",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.99.0",
+    "body-parser": "^1.17.2",
+    "cookie-session": "^1.3.0",
+    "ejs": "^2.5.7",
+    "express": "^4.15.4",
+    "jsforce": "^1.8.0",
+    "request": "^2.81.0"
+  }
+}

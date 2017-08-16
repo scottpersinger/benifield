@@ -1,0 +1,19 @@
+<html>
+
+<body>
+
+<% if (!team_name) { %>
+	<a href="https://slack.com/oauth/authorize?scope=commands&client_id=226549721027.227518236262&redirect_uri=https%3A//92e2a3d2.ngrok.io/oauth&state=foobar"><img alt="Add to Slack" height="40" width="139" src="https://platform.slack-edge.com/img/add_to_slack.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x" /></a>
+
+<% } else { %>
+
+<h2>Welcome Slack team: <%= team_name %></h2>
+
+<form action="/sf/oauth2" method="GET">
+<button type="submit">Authenticate to Salesforce</button>
+</form>
+
+<% } %>
+
+</body>
+</html>
