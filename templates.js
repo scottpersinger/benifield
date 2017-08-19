@@ -20,7 +20,7 @@ var $menus = {
          "backmenu": "help", \
          "attachments": [ \
             { "text": "", \
-              "callback_id": "list", \
+              "callback_id": "List records", \
               "actions": [ \
               	{{#button}} Users {{/button}} \
                 ,{{#button}} Accounts {{/button}} \
@@ -54,6 +54,7 @@ var $templates = {
           "pretext": "...", \
           "title": "{{Name}}", \
           "text": "{{Description}}", \
+          "callback_id": "Account,{{Id}}", \
           "fields": [ \
             {{#field}} {{AccountNumber}} {{/field}}, \
             {{#field}} {{Phone}} {{/field}}, \
@@ -113,7 +114,6 @@ var $templates = {
             {{#button}} {{|Details}} {{/button}} \
         ] \
        }'
-
 }
 
 function $field(text, render) {
@@ -147,12 +147,12 @@ function evalTemplate(template, sobject, object) {
 
 function parseTemplateFields(template) {
     var re = new RegExp(/\{\{([\w\.]+)\}\}/g)
-    var fields = []
+    var fields = {}
     var m
     while ((m = re.exec(template)) != null) {
-        fields.push(m[1])
+    	fields[m[1]] = true
     }
-    return fields   
+    return Object.keys(fields)
 }
 
 function testTemplates() {
