@@ -12,6 +12,7 @@ let USERS = {}
 let USERS_TABLE = 'benifield-users'
 
 let configurator = require('./configurator')
+let templateStore = require('./templates')
 
 configurator.require_values([
     'SLACK_CLIENT_ID',
@@ -52,7 +53,7 @@ let updateAccessToken = (user, access_token) => {
 }
 let getUser = (team_id, callback) => {
     if (USERS[team_id]) {
-        return USERS[team_id]
+        callback(null, USERS[team_id])
     } else {
         dynamo.get({TableName: USERS_TABLE, Key: {team_id: team_id}}, function(err, data) {
             if (err) {
@@ -66,6 +67,22 @@ let getUser = (team_id, callback) => {
     }
 }
 
+let getSFConnection = (team_id, user_id, callback) => {
+    getUser(team_id, (err, user) => {
+        console.log("Got user")
+        var conn = new jsforce.Connection({
+            oauth2 : sfoauth,
+            instanceUrl: user.salesforce.instance_url,
+            accessToken: user.salesforce.access_token,
+            refreshToken: user.salesforce.refresh_token
+        });
+        conn.on("refresh", function(accessToken) {
+            updateAccessToken(user, accessToken)
+        })
+        callback(null, conn)
+    })
+}
+
 // Store our app's ID and Secret. These we got from Step 1. 
 // For this tutorial, we'll keep your API credentials right here. But for an actual app, you'll want to  store them securely in environment variables. 
 var clientId = configurator.SLACK_CLIENT_ID;
@@ -75,6 +92,7 @@ var clientSecret = configurator.SLACK_CLIENT_SECRET;
 var app = express();
 
 app.use(bodyParser.urlencoded({extended:false}))
+app.use(bodyParser.json())
 app.set('view engine', 'ejs')
 app.set('views', './views')
 app.use(cookieSession({name:'session', keys: [clientSecret]}))
@@ -173,30 +191,16 @@ function formatResults(err, result, fields) {
     }
 }
 
-function listCommand(conn, args, callback) {
-    switch (args[0]) {
-        case undefined:
-            callback("list <users|tables>, list table <table name>")
-            break
-        case 'users':
-            conn.query("select Id, Name, Email from User", function(err, result) {
-                var fr = formatResults(err, result.records, ['Name', 'Email'])
-                callback(fr)
-            })
-            break
-        case 'tables':
-            conn.describeGlobal(function(err, result) {
-                callback(formatResults(err, result.sobjects, ['name']))
-            })
-            break
-        default:
-            callback("unknown options")
-    }
-}
-
-module.exports = {
-    listCommand: listCommand,
-    formatResults: formatResults
+function _test(callback) {
+    getUser('T6NG5M70T', function(err, user) {
+        var conn = new jsforce.Connection({
+            oauth2 : sfoauth,
+            instanceUrl: user.salesforce.instance_url,
+            accessToken: user.salesforce.access_token,
+            refreshToken: user.salesforce.refresh_token
+        });
+        callback(user, conn)
+    })
 }
 
 function searchCommand(conn, args, callback) {
@@ -207,15 +211,75 @@ function searchCommand(conn, args, callback) {
             callback(formatResults(err, result.searchRecords, ['Id', 'Name']))
         }
     );
+}
 
+function button(t, text) {
+    return {name: t, text: text, type: "button", value: text.toLowerCase().replace(" ", "-")}
+}
+
+var t1 = "topic"
+var $menus = {
+    help: {text: "Pick an action",
+            attachments: [{
+                "text": "",
+                "callback_id": "help",
+                "actions": [
+                    button(t1, "List records"),
+                    button(t1, "Search records"),
+                    button(t1, "Edit records"),
+                    button(t1, "Chatter")
+                ]
+            }]
+        },
+    "list-records":
+        {text: "Browse records from different tables",
+         backmenu: "help",
+        attachments: [{
+            "text": "",
+            "callback_id": "list",
+            actions: [
+                button(t1, "Users"),
+                button(t1, "Accounts"),
+                button(t1, "Contacts"),
+                button(t1, "Leads"),
+                button(t1, "<< back")               
+            ]
+        }]
+    }
+}
+
+
+function helpCommand(callback) {
+    callback(templateStore.menu('help'))
 }
 
 // Route the endpoint that our slash command will point to and send back a simple response to indicate that ngrok is working
 app.post('/commands', function(req, res) {
     var q = req.body.text
     var cmds = q.split(/\s+/)
-    if (cmds.length > 0) {
+    console.log(req.body)
+
+    var finishCB = (result, json) => {
+        if (result) {
+            request.post(req.body.response_url,
+                {json: {text: result}})
+        } else {
+            console.log("Posting json")
+            request.post(req.body.response_url,
+                {json: json}, function(err) {
+                    console.log("Request returned ", err)
+                })
+        }
+    }
+
+    if (cmds.length > 0 && cmds[0]) {
+        console.log(`Running command '${cmds[0]}'`)
+        if (cmds[0] === 'help') {
+            return helpCommand((json) => res.send(json))
+        }
+        console.log("Getting user")
         getUser(req.body.team_id, (err, user) => {
+            console.log("Got user")
             res.send("Ok, working on it...")
             var conn = new jsforce.Connection({
                 oauth2 : sfoauth,
@@ -230,22 +294,88 @@ app.post('/commands', function(req, res) {
             console.log("Starting SF search")
             cmd = cmds[0].toLowerCase()
             var args = cmds.splice(1)
-            var finishCB = (result) => {
-                request.post(req.body.response_url,
-                    {json: {text: result}})
-            }
 
             switch (cmd) {
                 case 'list':
                     listCommand(conn, args, finishCB)
+                    break
                 case 'search':
-                    searchCommand(conn, args, finishCB)          
+                    searchCommand(conn, args, finishCB)
+                    break
             }
         })
 
     } else {
-        res.send("hi")
+        return helpCommand((json) => res.send(json))
     }
-    return
-
 });
+
+function listCommand(sobject, team_id, user_id, callback) {
+    getSFConnection(team_id, user_id, (err, conn) => {
+        sobject = sobject.replace(/s$/,'').toLowerCase()
+        var template = templateStore.templates[sobject]
+        if (!template) {
+            return callback(`Error, no template for '${sobject}'`)
+        }
+        var fieldList = templateStore.parseTemplateFields(template).join(",")
+        var cmd = `select ${fieldList} from ${sobject} order by createddate limit 10`
+        console.log(cmd)
+        conn.query(cmd, function(err, result) {
+            if (err) {
+                return callback("Error: " + err)
+            }
+            var attachments = []
+            result.records.forEach((r) => {attachments.push(templateStore.evalTemplate(template, sobject, r))})
+            var result = {text: `${result.records.length} records`, attachments: attachments}
+            console.log(result)
+            callback(null, result)
+        })
+    })
+}
+
+
+app.post('/buttons', function(req, res) {
+    var payload = JSON.parse(req.body.payload)
+    console.log(payload)
+    var action = payload.actions[0]
+
+    var finishCB = (result, json) => {
+        console.log(payload)
+        if (result) {
+            request.post(payload.response_url,
+                {json: {text: result}})
+        } else {
+            console.log("Posting json")
+            request.post(payload.response_url,
+                {json: json}, function(err) {
+                    console.log("Request returned ", err)
+                })
+        }
+    }
+
+    if (action.value.match(/back$/)) {
+        var menu = templateStore.menu(payload.callback_id).backmenu
+        res.send(templateStore.menu(menu))
+    } else {
+        switch (payload.callback_id) {
+            case 'list':
+                listCommand(action.value, payload.team.id, payload.user.id, finishCB)
+                break
+        }
+    }
+
+    if (templateStore.hasMenu(action.value)) {
+        res.send(templateStore.menu(action.value))
+    } else {
+        res.send("")
+        //{"response_type": "ephemeral", "replace_original": true, "text": "Working on it"})
+    }
+
+})
+
+module.exports = {
+    listCommand: listCommand,
+    formatResults: formatResults,
+    getUser: getUser,
+    _test: _test
+}
