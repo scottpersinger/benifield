@@ -1,7 +1,8 @@
 let jsforce = require('jsforce')
 let AWS = require('aws-sdk');
+let request = require('request');
 
-module.exports = function(app, configurator) {
+module.exports = function(knex, app, configurator) {
 
 AWS.config.update({region:'us-east-1'});
 let dynamo = new AWS.DynamoDB.DocumentClient();
@@ -12,8 +13,18 @@ let USERS_TABLE = 'benifield-users'
 
 let saveUser = (userInfo) => {
     console.log("Saving: ", userInfo)
-    USERS[userInfo.team_id] = userInfo
-    userInfo.project_id = "1"
+    knex('users').insert({
+    	slack_user_id: userInfo.user_id, 
+    	slack_team_id: userInfo.team_id,
+    	sf_org_id: userInfo.salesforce.organization_id, 
+    	data: userInfo.salesforce
+    }).catch((err) => {
+    	console.log("DB ERROR saving user: ", err)
+    })
+
+    USERS[userInfo.user_id] = userInfo
+
+    /*
     var params = {
         TableName: USERS_TABLE, Item: userInfo
     }
@@ -21,7 +32,22 @@ let saveUser = (userInfo) => {
         if (err) {
             console.error("Dynamo error: ", err);
         }
-    })
+    })*/
+}
+
+let getUser = (user_id, team_id, callback) => {
+    if (USERS[user_id]) {
+        callback(null, USERS[user_id])
+    } else {
+    	knex.select().table('users').where({slack_user_id: user_id, slack_team_id: team_id})
+    	.then(function(rows) {
+    		USERS[user_id] = rows[0]
+    		console.log("Found user: ", rows[0])
+    		callback(null, rows[0])
+    	}).catch(function(err) {
+    		callback(err, null)
+    	})
+    }
 }
 
 let updateAccessToken = (user, access_token) => {
@@ -70,7 +96,7 @@ app.get('/sf/callback', function(req, res) {
         console.log("User ID: " + userInfo.id);
         console.log("Org ID: " + userInfo.organizationId);
         conn.identity(function(err, res) {
-            saveUser({team_id: req.session.slack.team_id, 
+            saveUser({team_id: req.session.slack.team_id, user_id: req.session.slack.installer_user_id,
                       salesforce: {username: res.username, idurl: res.id, instance_url: conn.instanceUrl, 
                             access_token: conn.accessToken, refresh_token: conn.refreshToken,
                             organization_id: userInfo.organizationId, user_id: userInfo.id},
@@ -97,8 +123,8 @@ app.get('/oauth', function(req, res) {
         request.post('https://slack.com/api/oauth.token',
             {form: {
                 code: req.query.code, 
-                client_id: clientId, 
-                client_secret: clientSecret
+                client_id: configurator.SLACK_CLIENT_ID, 
+                client_secret: configurator.SLACK_CLIENT_SECRET
             }}
         , function (error, response, body) {
             if (error) {
@@ -112,22 +138,6 @@ app.get('/oauth', function(req, res) {
         })
     }
 });
-
-let getUser = (team_id, callback) => {
-    if (USERS[team_id]) {
-        callback(null, USERS[team_id])
-    } else {
-        dynamo.get({TableName: USERS_TABLE, Key: {team_id: team_id}}, function(err, data) {
-            if (err) {
-                console.log("Dynamo error reading app target: ", err)
-                callback(err, null)
-            } else {
-                USERS[team_id] = data.Item
-                callback(null, data.Item)
-            }
-        })
-    }
-}
 
 let getSFConnection = (team_id, user_id, callback) => {
     getUser(team_id, (err, user) => {

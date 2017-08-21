@@ -14,6 +14,9 @@ configurator.require_values([
     'SF_REDIRECT_BENIFIELD'
 ], configurator.standard_env_paths())
 
+// ******** SETUP DATABASE CONNECTION
+let knex = require('knex')(require('./knexfile.js')[process.env.DATABASE_URL ? 'production' : 'development'])
+
 // Store our app's ID and Secret. These we got from Step 1. 
 // For this tutorial, we'll keep your API credentials right here. But for an actual app, you'll want to  store them securely in environment variables. 
 var clientId = configurator.SLACK_CLIENT_ID;
@@ -28,7 +31,7 @@ app.set('view engine', 'ejs')
 app.set('views', './views')
 app.use(cookieSession({name:'session', keys: [clientSecret]}))
 
-var salesforce = require('./app')(app, configurator)
+var salesforce = require('./app')(knex, app, configurator)
 
 // Again, we define a port we want to listen to
 const PORT=4390;
@@ -123,6 +126,9 @@ app.post('/buttons', function(req, res) {
     var payload = JSON.parse(req.body.payload)
     console.log(payload)
     var action = payload.actions[0]
+    if (action.type == 'select') {
+        action.value = ''
+    }
 
     var finishCB = (result, json) => {
         console.log(payload)
@@ -147,11 +153,20 @@ app.post('/buttons', function(req, res) {
         res.send(`Looking up record: ${pair[0]} with id ${pair[1]}`)
         return
     } else {
+        var handled = true
         switch (payload.callback_id) {
             case 'List records':
                 listCommand(action.value, payload.team.id, payload.user.id, finishCB)
                 res.send("Working on it")
+                break
+            case 'Create records':
+                res.send("Enter your new record as a command like\n" +
+                         "/force create Lead FirstName:Scott LastName:Persinger LeadSource:referral")
+                break
+            default:
+                handled = false
         }
+        if (handled) { return }
     }
 
     if (templateStore.hasMenu(action.value)) {

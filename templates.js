@@ -9,7 +9,7 @@ var $menus = {
              "actions": [ \
              	{{#button}} List records {{/button}} \
              	,{{#button}} Search records {{/button}} \
-             	,{{#button}} Edit records {{/button}} \
+             	,{{#button}} Create records {{/button}} \
                ] \
             } \
           ] \
@@ -30,7 +30,25 @@ var $menus = {
               ] \
             } \
          ] \
-        }'
+        }',
+
+    "Create records":
+    	'{"text": "Create Salesforce records", \
+    	  "backmenu": "help", \
+    	  "attachments": [ \
+    	    {"text": "", \
+    		 "callback_id": "Create records", \
+    		 "actions": [ \
+    		 	{"name": "sobject", \
+    		 	"text": "Pick the record type", \
+    		 	"type": "select", \
+    		 	"options": [{{#options}} Lead,Contact,Task,Opportunity {{/options}}] \
+    		    }, \
+                {{#button}}<< back{{/button}} \
+    		 ] \
+    		} \
+    	  ] \
+    	}'
 }
 
 function hasMenu(key) {
@@ -40,6 +58,7 @@ function hasMenu(key) {
 function menu(key) {
     var obj = {}
     obj.button = function() {return $button}
+    obj.options = function() {return $options}
 
     var json = mustache.render($menus[key], obj)
     console.log(json)
@@ -72,6 +91,7 @@ var $templates = {
         "color": "#9F43E0", \
         "title": "{{Name}}", \
         "text": "{{Account.Name}}", \
+        "callback_id": "Contact,{{Id}}", \
         "fields": [ \
             {{#field}} {{Email}} {{/field}}, \
             {{#field}} {{Phone}} {{/field}} \
@@ -87,6 +107,7 @@ var $templates = {
         "color": "#9F43E0", \
         "title": "{{Name}}", \
         "text": "{{Email}}", \
+        "callback_id": "User,{{Id}}", \
         "fields": [ \
             {{#field}} {{Phone}} {{/field}} \
             ,{{#field}} {{Profile.Name}} {{/field}} \
@@ -103,6 +124,7 @@ var $templates = {
         "color": "#9F43E0", \
         "title": "{{Name}}", \
         "text": "{{Email}}", \
+        "callback_id": "Lead,{{Id}}", \
         "fields": [ \
             {{#field}} {{City}} {{/field}} \
             ,{{#field}} {{State}} {{/field}} \
@@ -128,6 +150,14 @@ function $button(text, render) {
     return `{"name": "${fn}", "text": "${fn}", "type": "button", "value": "${fn}"}`
 }
 
+function $options(text, render) {
+	console.log("Options request: ", text)
+	var fields = render(text).trim().split(",")
+	var r = fields.map((f) => {return `{"text":"${f}","value":"${f}"}`}).join(",")
+	console.log("Options result: ", r)
+	return r
+}
+
 function evalTemplate(template, sobject, object) {
     var t = $templates[sobject]
     if (!t) {
@@ -135,6 +165,8 @@ function evalTemplate(template, sobject, object) {
     }
     object.field = function() {return $field}
     object.button = function() {return $button}
+    object.options = function() {return $options}
+
     try {
         var json = mustache.render(t, object)
         var res = JSON.parse(json)
@@ -174,5 +206,6 @@ module.exports = {
 	hasMenu: hasMenu,
 	evalTemplate: evalTemplate,
 	templates: $templates,
-	parseTemplateFields: parseTemplateFields
+	parseTemplateFields: parseTemplateFields,
+	options: $options
 }
