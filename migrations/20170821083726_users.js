@@ -6,7 +6,8 @@ exports.up = function(knex, Promise) {
 		table.string('slack_user_id').notNullable()
 		table.string('slack_team_id').notNullable()
 		table.string('sf_org_id')
-		table.jsonb('data')
+		table.jsonb('slack')
+		table.jsonb('salesforce')
 	})
 };
 
